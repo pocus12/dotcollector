@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dot Collector</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #0a0c14;
+  --surface: #111520;
+  --border:  rgba(255,255,255,0.08);
+  --blue:    #3b82f6;
+  --red:     #ef4444;
+  --black:   #1e1e1e;
+  --white:   #f1f5f9;
+  --muted:   #64748b;
+  --green:   #10b981;
+  --amber:   #f59e0b;
+  --cell:    52px;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--white);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 700px 500px at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 60%),
+    radial-gradient(ellipse 500px 400px at 80% 80%, rgba(239,68,68,0.08) 0%, transparent 60%);
+}
+
+.game-container {
+  position: relative; z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* ── TITLE ── */
+.title-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px;
+}
+.title-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--blue), #7c3aed);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 20px rgba(59,130,246,0.35);
+}
+.title-icon svg { width: 18px; height: 18px; }
+.title-text {
+  font-family: 'Syne', sans-serif;
+  font-size: 22px; font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #f1f5f9, #94a3b8);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* ── SCORE BAR ── */
+.score-bar {
+  width: calc(var(--cell) * 10 + 22px);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+}
+
+.score-block {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.score-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted);
+}
+.score-val {
+  font-family: 'Syne', sans-serif;
+  font-size: 28px; font-weight: 800;
+  letter-spacing: -1px; color: var(--white);
+  line-height: 1;
+  transition: transform 0.12s;
+}
+.score-val.bump { animation: scoreBump 0.18s ease; }
+@keyframes scoreBump { 0%{transform:scale(1)} 50%{transform:scale(1.3)} 100%{transform:scale(1)} }
+
+.legend {
+  display: flex; align-items: center; gap: 16px;
+}
+.leg-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+}
+.leg-dot {
+  width: 14px; height: 14px; border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.controls-hint {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 600; color: var(--muted);
+}
+.key-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 5px;
+  background: var(--bg); border: 1px solid rgba(255,255,255,0.15);
+  font-size: 9px; color: rgba(255,255,255,0.7);
+}
+
+/* ── GRID WRAPPER ── */
+.grid-wrapper {
+  position: relative;
+  width: calc(var(--cell) * 10 + 22px);
+  padding: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+
+/* ── CANVAS ── */
+canvas {
+  display: block;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+
+/* ── DEATH SCREEN ── */
+.death-screen {
+  display: none;
+  position: absolute;
+  inset: 11px;
+  border-radius: 8px;
+  background: rgba(10,12,20,0.92);
+  backdrop-filter: blur(8px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  z-index: 10;
+  animation: fadeIn 0.3s ease;
+}
+.death-screen.show { display: flex; }
+@keyframes fadeIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+
+.death-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(239,68,68,0.15);
+  border: 2px solid rgba(239,68,68,0.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.death-icon svg { width: 32px; height: 32px; color: #ef4444; }
+
+.death-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 28px; font-weight: 800;
+  letter-spacing: -0.5px; color: var(--white);
+  text-align: center;
+}
+.death-sub { font-size: 13px; color: var(--muted); text-align: center; }
+
+.final-score {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 16px 40px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+}
+.fs-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.fs-num {
+  font-family: 'Syne', sans-serif;
+  font-size: 48px; font-weight: 800;
+  letter-spacing: -2px;
+  background: linear-gradient(135deg, var(--blue), #a78bfa);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  line-height: 1;
+}
+
+.restart-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 32px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--blue), #7c3aed);
+  border: none; font-family: 'Syne', sans-serif;
+  font-size: 15px; font-weight: 800; color: white;
+  cursor: pointer; transition: all 0.18s;
+  box-shadow: 0 8px 28px rgba(59,130,246,0.4);
+  position: relative; overflow: hidden;
+  letter-spacing: -0.3px;
+}
+.restart-btn::before {
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+}
+.restart-btn svg { width: 18px; height: 18px; position: relative; z-index:1; }
+.restart-btn span { position: relative; z-index:1; }
+.restart-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(59,130,246,0.55); }
+.restart-btn:active { transform: none; }
+</style>
+</head>
+<body>
+
+<div class="game-container">
+
+  <div class="title-bar">
+    <div class="title-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><circle cx="12" cy="12" r="4" fill="white"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/></svg>
+    </div>
+    <div class="title-text">Dot Collector</div>
+  </div>
+
+  <!-- SCORE BAR -->
+  <div class="score-bar">
+    <div class="score-block">
+      <div class="score-label">Score</div>
+      <div class="score-val" id="scoreDisplay">0</div>
+    </div>
+
+    <div class="legend">
+      <div class="leg-item">
+        <div class="leg-dot" style="background:#3b82f6; border-radius:50%;"></div>
+        Collect
+      </div>
+      <div class="leg-item">
+        <div class="leg-dot" style="background:#1e1e1e; border:2px solid #4b5563;"></div>
+        Avoid
+      </div>
+      <div class="leg-item">
+        <div class="leg-dot" style="background:#ef4444;"></div>
+        You
+      </div>
+    </div>
+
+    <div class="controls-hint">
+      <span class="key-badge">↑</span>
+      <span class="key-badge">↓</span>
+      <span class="key-badge">←</span>
+      <span class="key-badge">→</span>
+    </div>
+  </div>
+
+  <!-- GRID -->
+  <div class="grid-wrapper">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- DEATH SCREEN -->
+    <div class="death-screen" id="deathScreen">
+      <div class="death-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      </div>
+      <div>
+        <div class="death-title">Game Over</div>
+        <div class="death-sub">You hit a permanent dot</div>
+      </div>
+      <div class="final-score">
+        <div class="fs-label">Final Score</div>
+        <div class="fs-num" id="finalScore">0</div>
+      </div>
+      <button class="restart-btn" onclick="restartGame()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>Play Again</span>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const COLS = 10, ROWS = 10;
+const CELL = 52;
+const DOTS_COUNT = 5;
+
+const canvas = document.getElementById('gameCanvas');
+canvas.width  = COLS * CELL;
+canvas.height = ROWS * CELL;
+const ctx = canvas.getContext('2d');
+
+// ── COLORS ──
+const C_BG        = '#0d1120';
+const C_GRID      = 'rgba(255,255,255,0.06)';
+const C_GRID_H    = 'rgba(255,255,255,0.03)';
+const C_PLAYER    = '#ef4444';
+const C_PLAYER_HL = '#fca5a5';
+const C_DOT       = '#3b82f6';
+const C_DOT_HL    = '#93c5fd';
+const C_PERM      = '#1e293b';
+const C_PERM_BD   = '#475569';
+
+// ── STATE ──
+let player, score, dots, permDots, alive, animFrame, lastMove;
+
+function initGame() {
+  player   = { x: 4, y: 4 };
+  score    = 0;
+  dots     = [];
+  permDots = [];
+  alive    = true;
+  lastMove = 0;
+
+  document.getElementById('scoreDisplay').textContent = '0';
+  document.getElementById('deathScreen').classList.remove('show');
+
+  spawnDots();
+  if (animFrame) cancelAnimationFrame(animFrame);
+  loop();
+}
+
+function cellKey(x, y) { return x + ',' + y; }
+
+function isTaken(x, y, excludeDots=false) {
+  if (x === player.x && y === player.y) return true;
+  if (!excludeDots && dots.some(d => d.x === x && d.y === y)) return true;
+  if (permDots.some(d => d.x === x && d.y === y)) return true;
+  return false;
+}
+
+function randomFreeCell() {
+  const taken = new Set();
+  taken.add(cellKey(player.x, player.y));
+  dots.forEach(d => taken.add(cellKey(d.x, d.y)));
+  permDots.forEach(d => taken.add(cellKey(d.x, d.y)));
+
+  const free = [];
+  for (let x = 0; x < COLS; x++)
+    for (let y = 0; y < ROWS; y++)
+      if (!taken.has(cellKey(x,y))) free.push({x,y});
+
+  if (!free.length) return null;
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+function spawnDots() {
+  while (dots.length < DOTS_COUNT) {
+    const cell = randomFreeCell();
+    if (!cell) break;
+    dots.push({ x: cell.x, y: cell.y, pulse: Math.random() * Math.PI * 2 });
+  }
+}
+
+// ── INPUT ──
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    keys[e.key] = true;
+  }
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+const MOVE_DELAY = 130; // ms between moves
+let lastMoveTime = 0;
+
+function handleInput(now) {
+  if (!alive) return;
+  if (now - lastMoveTime < MOVE_DELAY) return;
+
+  let dx = 0, dy = 0;
+  if (keys['ArrowUp'])    dy = -1;
+  else if (keys['ArrowDown'])  dy =  1;
+  else if (keys['ArrowLeft'])  dx = -1;
+  else if (keys['ArrowRight']) dx =  1;
+
+  if (dx === 0 && dy === 0) return;
+
+  const nx = player.x + dx;
+  const ny = player.y + dy;
+
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+
+  lastMoveTime = now;
+
+  // Check permanent dot collision → die
+  if (permDots.some(d => d.x === nx && d.y === ny)) {
+    player.x = nx; player.y = ny;
+    die(); return;
+  }
+
+  // Check blue dot collision → collect
+  const dotIdx = dots.findIndex(d => d.x === nx && d.y === ny);
+  if (dotIdx !== -1) {
+    // Leave permanent dot at the position the character just LEFT (where it touched from)
+    const prevX = player.x, prevY = player.y;
+    player.x = nx; player.y = ny;
+
+    // Score
+    score++;
+    const sd = document.getElementById('scoreDisplay');
+    sd.textContent = score;
+    sd.classList.remove('bump');
+    void sd.offsetWidth;
+    sd.classList.add('bump');
+
+    // Remove blue dot, add permanent dot where player was
+    dots.splice(dotIdx, 1);
+    permDots.push({ x: prevX, y: prevY });
+
+    // Respawn blue dot elsewhere
+    spawnDots();
+    return;
+  }
+
+  // Normal move
+  player.x = nx; player.y = ny;
+}
+
+function die() {
+  alive = false;
+  document.getElementById('finalScore').textContent = score;
+  setTimeout(() => {
+    document.getElementById('deathScreen').classList.add('show');
+  }, 300);
+}
+
+function restartGame() { initGame(); }
+
+// ── DRAW ──
+function draw(now) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background
+  ctx.fillStyle = C_BG;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Subtle alternating cell tint
+  for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < ROWS; y++) {
+      if ((x + y) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.015)';
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+      }
+    }
+  }
+
+  // Grid lines
+  ctx.strokeStyle = C_GRID;
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * CELL, 0);
+    ctx.lineTo(x * CELL, ROWS * CELL);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * CELL);
+    ctx.lineTo(COLS * CELL, y * CELL);
+    ctx.stroke();
+  }
+
+  // ── PERMANENT DOTS (black) ──
+  permDots.forEach(d => {
+    const cx = d.x * CELL + CELL/2;
+    const cy = d.y * CELL + CELL/2;
+    const r  = CELL * 0.28;
+
+    // subtle glow
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2);
+    grd.addColorStop(0, 'rgba(71,85,105,0.3)');
+    grd.addColorStop(1, 'rgba(71,85,105,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // dot body
+    ctx.fillStyle = C_PERM;
+    ctx.strokeStyle = C_PERM_BD;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // inner X mark
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1.5;
+    const m = r * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(cx-m, cy-m); ctx.lineTo(cx+m, cy+m);
+    ctx.moveTo(cx+m, cy-m); ctx.lineTo(cx-m, cy+m);
+    ctx.stroke();
+  });
+
+  // ── BLUE DOTS (collectible) ──
+  dots.forEach(d => {
+    const cx = d.x * CELL + CELL/2;
+    const cy = d.y * CELL + CELL/2;
+    const pulse = Math.sin(now * 0.003 + d.pulse) * 0.15 + 0.85;
+    const r = CELL * 0.22 * pulse;
+
+    // glow
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3);
+    grd.addColorStop(0, 'rgba(59,130,246,0.35)');
+    grd.addColorStop(1, 'rgba(59,130,246,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // dot
+    const dotGrd = ctx.createRadialGradient(cx - r*0.3, cy - r*0.3, 0, cx, cy, r);
+    dotGrd.addColorStop(0, C_DOT_HL);
+    dotGrd.addColorStop(1, C_DOT);
+    ctx.fillStyle = dotGrd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // ── PLAYER ──
+  if (alive) {
+    const px = player.x * CELL;
+    const py = player.y * CELL;
+    const pad = 6;
+    const sz  = CELL - pad * 2;
+
+    // player glow
+    const pgrd = ctx.createRadialGradient(px+CELL/2, py+CELL/2, 0, px+CELL/2, py+CELL/2, CELL);
+    pgrd.addColorStop(0, 'rgba(239,68,68,0.3)');
+    pgrd.addColorStop(1, 'rgba(239,68,68,0)');
+    ctx.fillStyle = pgrd;
+    ctx.beginPath();
+    ctx.arc(px + CELL/2, py + CELL/2, CELL, 0, Math.PI * 2);
+    ctx.fill();
+
+    // player body — rounded square
+    const radius = 6;
+    ctx.fillStyle = C_PLAYER;
+    ctx.shadowColor = C_PLAYER;
+    ctx.shadowBlur = 14;
+    roundRect(ctx, px + pad, py + pad, sz, sz, radius);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    roundRect(ctx, px + pad + 4, py + pad + 4, sz * 0.45, sz * 0.22, 3);
+    ctx.fill();
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── LOOP ──
+function loop(now = 0) {
+  handleInput(now);
+  draw(now);
+  if (alive) animFrame = requestAnimationFrame(loop);
+}
+
+// ── START ──
+initGame();
+</script>
+</body>
+</html>
