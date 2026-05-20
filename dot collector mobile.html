@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dot Collector</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0a0c14;
+  --surface: #111520;
+  --border:  rgba(255,255,255,0.08);
+  --blue:    #3b82f6;
+  --red:     #ef4444;
+  --white:   #f1f5f9;
+  --muted:   #64748b;
+  --amber:   #f59e0b;
+}
+html, body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg); color: var(--white);
+  width: 100%; height: 100%;
+  min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+body::before {
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(59,130,246,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(239,68,68,0.08) 0%, transparent 60%);
+}
+
+/* ── OUTER WRAPPER — fills the safe viewport ── */
+.game-container {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; max-width: 600px;
+  padding: 0 10px;
+  /* height is driven by content; JS resizes canvas */
+}
+
+/* TITLE */
+.title-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; flex-shrink: 0;
+}
+.title-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--blue), #7c3aed);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 16px rgba(59,130,246,0.35); flex-shrink: 0;
+}
+.title-icon svg { width: 16px; height: 16px; }
+.title-text {
+  font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800; letter-spacing: -0.4px;
+  background: linear-gradient(135deg, #f1f5f9, #94a3b8);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* SCORE BAR */
+.score-bar {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border); border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  flex-shrink: 0;
+}
+.score-block { display: flex; flex-direction: column; gap: 0; }
+.score-label { font-size: 8px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.score-val {
+  font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+  letter-spacing: -1px; color: var(--white); line-height: 1;
+}
+.score-val.bump { animation: scoreBump 0.18s ease; }
+@keyframes scoreBump { 0%{transform:scale(1)} 50%{transform:scale(1.3)} 100%{transform:scale(1)} }
+
+/* TIMER */
+.timer-block { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 44px; }
+.timer-label { font-size: 8px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.timer-val {
+  font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+  letter-spacing: -1px; color: var(--white); line-height: 1; transition: color 0.3s;
+}
+.timer-val.urgent { color: #ef4444; animation: tPulse 0.5s ease infinite alternate; }
+@keyframes tPulse { from{opacity:1} to{opacity:0.45} }
+.timer-val.off { color: var(--muted); font-size: 13px; padding-top: 5px; }
+
+/* TIMER TOGGLE */
+.timer-toggle {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.18s; flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.timer-toggle:active { background: rgba(255,255,255,0.09); }
+.timer-toggle.on { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.35); }
+.tt-icon { width: 14px; height: 14px; color: var(--muted); transition: color 0.2s; flex-shrink: 0; }
+.timer-toggle.on .tt-icon { color: var(--amber); }
+.tt-label { font-size: 10px; font-weight: 700; color: var(--muted); white-space: nowrap; transition: color 0.2s; }
+.timer-toggle.on .tt-label { color: var(--amber); }
+.pill {
+  width: 26px; height: 15px; border-radius: 99px;
+  background: rgba(255,255,255,0.1); position: relative; transition: background 0.2s; flex-shrink: 0;
+}
+.timer-toggle.on .pill { background: var(--amber); }
+.pill::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: white; transition: transform 0.2s;
+}
+.timer-toggle.on .pill::after { transform: translateX(11px); }
+
+/* GRID WRAPPER — width is set by JS to match canvas */
+.grid-wrapper {
+  position: relative;
+  width: 100%;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  flex-shrink: 0;
+}
+canvas { display: block; border-radius: 6px; width: 100%; height: auto; image-rendering: pixelated; }
+
+/* GAME OVER */
+.end-screen {
+  display: none; position: absolute; inset: 8px; border-radius: 6px;
+  background: rgba(10,12,20,0.93); backdrop-filter: blur(10px);
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 10;
+}
+.end-screen.show { display: flex; animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+.end-icon { width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.end-icon.dead { background: rgba(239,68,68,0.15); border: 2px solid rgba(239,68,68,0.4); }
+.end-icon.time { background: rgba(245,158,11,0.15); border: 2px solid rgba(245,158,11,0.4); }
+.end-icon svg { width: 26px; height: 26px; }
+.end-title {
+  font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800;
+  letter-spacing: -0.5px; color: var(--white); text-align: center;
+}
+.end-sub { font-size: 12px; color: var(--muted); text-align: center; }
+.final-score {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 32px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+}
+.fs-label { font-size: 8px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+.fs-num {
+  font-family: 'Syne', sans-serif; font-size: 40px; font-weight: 800; letter-spacing: -2px;
+  background: linear-gradient(135deg, var(--blue), #a78bfa);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1;
+}
+.restart-btn {
+  display: flex; align-items: center; gap: 8px; padding: 12px 26px; border-radius: 11px;
+  background: linear-gradient(135deg, var(--blue), #7c3aed); border: none;
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: white;
+  cursor: pointer; transition: all 0.18s; box-shadow: 0 8px 26px rgba(59,130,246,0.4);
+  position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent;
+}
+.restart-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg,rgba(255,255,255,0.15),transparent); }
+.restart-btn svg { width: 15px; height: 15px; position: relative; z-index: 1; }
+.restart-btn span { position: relative; z-index: 1; }
+.restart-btn:active { transform: scale(0.97); }
+
+/* D-PAD */
+.dpad-wrap {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px 0 4px; flex-shrink: 0;
+}
+.dpad {
+  display: grid;
+  grid-template-areas: ". up ." "left center right" ". down .";
+  gap: 5px;
+  /* cell sizes set by JS */
+}
+.dpad-btn {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  cursor: pointer; transition: all 0.1s; color: var(--muted);
+  -webkit-tap-highlight-color: transparent; touch-action: none;
+}
+.dpad-btn svg { width: 24px; height: 24px; stroke-width: 2.5; }
+.dpad-btn:active, .dpad-btn.pr {
+  background: rgba(59,130,246,0.2); border-color: rgba(59,130,246,0.4);
+  color: var(--blue); transform: scale(0.91);
+}
+.dpad-btn.up    { grid-area: up; }
+.dpad-btn.down  { grid-area: down; }
+.dpad-btn.left  { grid-area: left; }
+.dpad-btn.right { grid-area: right; }
+.dpad-center { grid-area: center; border-radius: 50%; background: rgba(255,255,255,0.03); border: 1px solid var(--border); }
+
+/* LEGEND */
+.bottom-row {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 8px 0 0; flex-shrink: 0;
+}
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: var(--muted); }
+.leg-dot { width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="game-container" id="gc">
+
+  <div class="title-bar">
+    <div class="title-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><circle cx="12" cy="12" r="4" fill="white"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </div>
+    <div class="title-text">Dot Collector</div>
+  </div>
+
+  <div class="score-bar">
+    <div class="score-block">
+      <div class="score-label">Score</div>
+      <div class="score-val" id="scoreDisplay">0</div>
+    </div>
+    <div class="timer-block">
+      <div class="timer-label">Time</div>
+      <div class="timer-val off" id="timerDisplay">—</div>
+    </div>
+    <div class="timer-toggle" id="timerToggle" onclick="toggleTimerMode()">
+      <svg class="tt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 12"/></svg>
+      <span class="tt-label">60s Mode</span>
+      <div class="pill"></div>
+    </div>
+  </div>
+
+  <div class="grid-wrapper" id="gridWrapper">
+    <canvas id="gameCanvas"></canvas>
+    <div class="end-screen" id="endScreen">
+      <div class="end-icon dead" id="endIcon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      </div>
+      <div>
+        <div class="end-title" id="endTitle">Game Over</div>
+        <div class="end-sub" id="endSub">You hit a permanent dot</div>
+      </div>
+      <div class="final-score">
+        <div class="fs-label">Final Score</div>
+        <div class="fs-num" id="finalScore">0</div>
+      </div>
+      <button class="restart-btn" onclick="restartGame()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>Play Again</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="dpad-wrap">
+    <div class="dpad" id="dpad">
+      <button class="dpad-btn up"    id="btn-up">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+      <button class="dpad-btn left"  id="btn-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="dpad-center"></div>
+      <button class="dpad-btn right" id="btn-right">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <button class="dpad-btn down"  id="btn-down">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="bottom-row">
+    <div class="leg-item"><div class="leg-dot" style="background:#3b82f6;border-radius:50%;"></div>Collect</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#1e293b;border:1px solid #475569;"></div>Avoid</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#ef4444;border-radius:3px;"></div>You</div>
+  </div>
+
+</div>
+
+<script>
+// ── RESPONSIVE SIZING ──
+const COLS = 10, ROWS = 10, DOTS_COUNT = 5;
+const TIMER_SECS = 60, MOVE_DELAY = 130;
+let CELL = 40; // updated by resize()
+
+const canvas  = document.getElementById('gameCanvas');
+const ctx     = canvas.getContext('2d');
+
+function resize() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const gc = document.getElementById('gc');
+
+  // Available width: viewport minus padding
+  const maxW = Math.min(vw - 20, 580);
+
+  // Estimate non-grid vertical space (title + scorebar + dpad + legend + gaps)
+  // We want the grid + everything to fit in the viewport height
+  const nonGrid = 32 + 10 + 56 + 10 + 8 + 196 + 12 + 36 + 8;
+  // nonGrid ≈ title(42) + gap(10) + scorebar(56) + grid-padding(16) + dpad(196) + legend(44)
+  const availH = vh - nonGrid;
+
+  // Cell size = min of (width-based, height-based)
+  const cellW = Math.floor((maxW - 16) / COLS); // 16 = grid wrapper padding*2
+  const cellH = Math.floor(availH / ROWS);
+  CELL = Math.max(28, Math.min(cellW, cellH, 52));
+
+  const gridPx = CELL * COLS;
+  canvas.width  = gridPx;
+  canvas.height = CELL * ROWS;
+
+  // D-pad button size: ~1.5× cell, capped
+  const dpBtn = Math.max(48, Math.min(70, Math.floor(CELL * 1.4)));
+  const dpad = document.getElementById('dpad');
+  dpad.style.gridTemplateColumns = `${dpBtn}px ${dpBtn}px ${dpBtn}px`;
+  dpad.style.gridTemplateRows    = `${dpBtn}px ${dpBtn}px ${dpBtn}px`;
+
+  // Sync wrappers to canvas width
+  const totalW = gridPx + 16; // +16 for grid-wrapper padding
+  gc.style.maxWidth = totalW + 'px';
+}
+
+window.addEventListener('resize', () => { resize(); });
+resize();
+
+// ── COLORS ──
+const C_BG      = '#0d1120';
+const C_GRID    = 'rgba(255,255,255,0.06)';
+const C_PLAYER  = '#ef4444';
+const C_DOT     = '#3b82f6';
+const C_DOT_HL  = '#93c5fd';
+const C_PERM    = '#1e293b';
+const C_PERM_BD = '#475569';
+
+// ── STATE ──
+let player, score, dots, permDots, alive, raf, lastMove;
+let timerOn = false, timeLeft = TIMER_SECS, timerIv = null, timerStarted = false;
+
+// ── TIMER ──
+function toggleTimerMode() {
+  timerOn = !timerOn;
+  document.getElementById('timerToggle').classList.toggle('on', timerOn);
+  restartGame();
+}
+
+function startCountdown() {
+  clearInterval(timerIv);
+  if (!timerOn) return;
+  timerIv = setInterval(() => {
+    if (!alive) { clearInterval(timerIv); return; }
+    timeLeft--;
+    refreshTimerUI();
+    if (timeLeft <= 0) { clearInterval(timerIv); endTimeUp(); }
+  }, 1000);
+}
+
+function refreshTimerUI() {
+  const el = document.getElementById('timerDisplay');
+  if (!timerOn) { el.textContent = '—'; el.className = 'timer-val off'; return; }
+  el.textContent = timeLeft;
+  el.className = 'timer-val' + (timeLeft <= 10 ? ' urgent' : '');
+}
+
+function endTimeUp() {
+  alive = false;
+  setEndScreen('time', "Time's Up!", 'The 60 seconds ran out', '#f59e0b',
+    '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 12"/>');
+}
+function endDead() {
+  alive = false; clearInterval(timerIv);
+  setEndScreen('dead', 'Game Over', 'You hit a permanent dot', '#ef4444',
+    '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>');
+}
+function setEndScreen(type, title, sub, color, paths) {
+  document.getElementById('endIcon').className = 'end-icon ' + type;
+  document.getElementById('endIcon').innerHTML =
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">${paths}</svg>`;
+  document.getElementById('endTitle').textContent = title;
+  document.getElementById('endSub').textContent   = sub;
+  document.getElementById('finalScore').textContent = score;
+  setTimeout(() => document.getElementById('endScreen').classList.add('show'), 300);
+}
+
+// ── INIT ──
+function initGame() {
+  player = { x: 4, y: 4 }; score = 0; dots = []; permDots = [];
+  alive = true; lastMove = 0; timeLeft = TIMER_SECS; timerStarted = false;
+  clearInterval(timerIv);
+  document.getElementById('scoreDisplay').textContent = '0';
+  document.getElementById('endScreen').classList.remove('show');
+  refreshTimerUI();
+  spawnDots();
+  if (raf) cancelAnimationFrame(raf);
+  loop();
+}
+function restartGame() { resize(); initGame(); }
+
+// ── GRID HELPERS ──
+function cellKey(x, y) { return x + ',' + y; }
+function randomFreeCell() {
+  const taken = new Set();
+  taken.add(cellKey(player.x, player.y));
+  dots.forEach(d => taken.add(cellKey(d.x, d.y)));
+  permDots.forEach(d => taken.add(cellKey(d.x, d.y)));
+  const free = [];
+  for (let x = 0; x < COLS; x++)
+    for (let y = 0; y < ROWS; y++)
+      if (!taken.has(cellKey(x, y))) free.push({ x, y });
+  if (!free.length) return null;
+  return free[Math.floor(Math.random() * free.length)];
+}
+function spawnDots() {
+  while (dots.length < DOTS_COUNT) {
+    const c = randomFreeCell(); if (!c) break;
+    dots.push({ x: c.x, y: c.y, pulse: Math.random() * Math.PI * 2 });
+  }
+}
+
+// ── KEYBOARD ──
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    e.preventDefault(); keys[e.key] = true;
+  }
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ── D-PAD ──
+function setupDpad(id, dir) {
+  const btn = document.getElementById('btn-' + id);
+  const press   = e => { e.preventDefault(); keys[dir] = true;  btn.classList.add('pr'); };
+  const release = e => { e.preventDefault(); keys[dir] = false; btn.classList.remove('pr'); };
+  btn.addEventListener('touchstart',  press,   { passive: false });
+  btn.addEventListener('touchend',    release, { passive: false });
+  btn.addEventListener('touchcancel', release, { passive: false });
+  btn.addEventListener('mousedown',   press);
+  btn.addEventListener('mouseup',     release);
+  btn.addEventListener('mouseleave',  release);
+}
+setupDpad('up',    'ArrowUp');
+setupDpad('down',  'ArrowDown');
+setupDpad('left',  'ArrowLeft');
+setupDpad('right', 'ArrowRight');
+
+// ── SWIPE ──
+let swX = 0, swY = 0, swFired = false;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); swX = e.touches[0].clientX; swY = e.touches[0].clientY; swFired = false;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault(); if (swFired) return;
+  const dx = e.touches[0].clientX - swX, dy = e.touches[0].clientY - swY;
+  if (Math.sqrt(dx*dx + dy*dy) < 16) return;
+  swFired = true;
+  const dir = Math.abs(dx) > Math.abs(dy)
+    ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+    : (dy > 0 ? 'ArrowDown'  : 'ArrowUp');
+  keys[dir] = true; setTimeout(() => keys[dir] = false, 80);
+}, { passive: false });
+
+// ── MOVE ──
+function handleInput(now) {
+  if (!alive) return;
+  if (now - lastMove < MOVE_DELAY) return;
+  let dx = 0, dy = 0;
+  if      (keys['ArrowUp'])    dy = -1;
+  else if (keys['ArrowDown'])  dy =  1;
+  else if (keys['ArrowLeft'])  dx = -1;
+  else if (keys['ArrowRight']) dx =  1;
+  if (!dx && !dy) return;
+  const nx = player.x + dx, ny = player.y + dy;
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+  lastMove = now;
+  if (!timerStarted) { timerStarted = true; startCountdown(); }
+  if (permDots.some(d => d.x === nx && d.y === ny)) { player.x = nx; player.y = ny; endDead(); return; }
+  const di = dots.findIndex(d => d.x === nx && d.y === ny);
+  if (di !== -1) {
+    const px = player.x, py = player.y;
+    player.x = nx; player.y = ny;
+    score++;
+    const sd = document.getElementById('scoreDisplay');
+    sd.textContent = score; sd.classList.remove('bump'); void sd.offsetWidth; sd.classList.add('bump');
+    dots.splice(di, 1);
+    permDots.push({ x: px, y: py });
+    spawnDots(); return;
+  }
+  player.x = nx; player.y = ny;
+}
+
+// ── DRAW ──
+function draw(now) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = C_BG; ctx.fillRect(0, 0, W, H);
+
+  // checker
+  for (let x = 0; x < COLS; x++)
+    for (let y = 0; y < ROWS; y++)
+      if ((x + y) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.015)';
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+      }
+
+  // grid lines
+  ctx.strokeStyle = C_GRID; ctx.lineWidth = 1;
+  for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x*CELL, 0); ctx.lineTo(x*CELL, H); ctx.stroke(); }
+  for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y*CELL); ctx.lineTo(W, y*CELL); ctx.stroke(); }
+
+  // timer arc
+  if (timerOn && alive && timerStarted) {
+    const frac = timeLeft / TIMER_SECS;
+    const urgent = timeLeft <= 10;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = urgent ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.25)';
+    const cx = W/2, cy = H/2, r = W * 0.43;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + frac * 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  // permanent dots
+  permDots.forEach(d => {
+    const cx = d.x*CELL + CELL/2, cy = d.y*CELL + CELL/2, r = CELL * 0.28;
+    const g = ctx.createRadialGradient(cx,cy,0,cx,cy,r*2);
+    g.addColorStop(0,'rgba(71,85,105,0.3)'); g.addColorStop(1,'rgba(71,85,105,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx,cy,r*2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = C_PERM; ctx.strokeStyle = C_PERM_BD; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1.3;
+    const m = r * 0.42;
+    ctx.beginPath(); ctx.moveTo(cx-m,cy-m); ctx.lineTo(cx+m,cy+m);
+    ctx.moveTo(cx+m,cy-m); ctx.lineTo(cx-m,cy+m); ctx.stroke();
+  });
+
+  // blue dots
+  dots.forEach(d => {
+    const cx = d.x*CELL + CELL/2, cy = d.y*CELL + CELL/2;
+    const p = Math.sin(now*0.003 + d.pulse)*0.15 + 0.85, r = CELL * 0.22 * p;
+    const g = ctx.createRadialGradient(cx,cy,0,cx,cy,r*3);
+    g.addColorStop(0,'rgba(59,130,246,0.35)'); g.addColorStop(1,'rgba(59,130,246,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx,cy,r*3,0,Math.PI*2); ctx.fill();
+    const dg = ctx.createRadialGradient(cx-r*0.3,cy-r*0.3,0,cx,cy,r);
+    dg.addColorStop(0,C_DOT_HL); dg.addColorStop(1,C_DOT);
+    ctx.fillStyle = dg; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  });
+
+  // player
+  if (alive) {
+    const px = player.x*CELL, py = player.y*CELL, pad = Math.max(4, CELL*0.12), sz = CELL - pad*2;
+    const pg = ctx.createRadialGradient(px+CELL/2,py+CELL/2,0,px+CELL/2,py+CELL/2,CELL);
+    pg.addColorStop(0,'rgba(239,68,68,0.3)'); pg.addColorStop(1,'rgba(239,68,68,0)');
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(px+CELL/2,py+CELL/2,CELL,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = C_PLAYER; ctx.shadowColor = C_PLAYER; ctx.shadowBlur = 12;
+    rr(px+pad, py+pad, sz, sz, Math.max(3, sz*0.15)); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    rr(px+pad+3, py+pad+3, sz*0.44, sz*0.22, 2); ctx.fill();
+  }
+}
+
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+// ── LOOP ──
+function loop(now = 0) { handleInput(now); draw(now); if (alive) raf = requestAnimationFrame(loop); }
+
+initGame();
+</script>
+</body>
+</html>
